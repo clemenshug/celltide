@@ -37,6 +37,6 @@ p <- y %>%
   ggplot(aes(tide_radius, value_norm, color = marker_name)) +
     geom_line() +
     facet_grid(vars(measure), vars(cell_id), scales = "free_y") +
-    coord_cartesian(xlim = c(-6, 4))
+    coord_cartesian(xlim = c(-8, 4))
 
 direct.label(p, method = "first.bumpup")
