@@ -40,3 +40,24 @@ p <- y %>%
     coord_cartesian(xlim = c(-8, 4))
 
 direct.label(p, method = "first.bumpup")
+
+
+profile_res <- read_csv("profile_test_res.csv.gz")
+
+
+profile_res_clean <- profile_res %>%
+  group_by(cell_1, cell_2) %>%
+  filter(if(any(is.na(value))) FALSE else TRUE) %>%
+  ungroup() %>%
+  mutate(
+    position = position_id - 2
+  ) %>%
+  left_join(
+    select(markers, marker_name) %>%
+      mutate(marker_id = seq_len(n()) - 1),
+    by = c("marker_id")
+  )
+
+profile_res_clean %>%
+  filter(!str_starts(marker_name, "DNA")) %>%
+  View()
