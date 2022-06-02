@@ -48,18 +48,22 @@ def celltide():
         format="%(processName)s %(asctime)s %(levelname)s: %(message)s",
         level=os.environ.get("LOGLEVEL", "INFO").upper(),
     )
-    logging.debug(args)
+    logging.info(args)
     if (
         os.path.exists(args.OUTPUT_DIR)
         and len(os.listdir(args.OUTPUT_DIR)) > 0
         and not args.force
     ):
-        args.error("Output directory already exists. Use --force to overwrite.")
+        parser.error("Output directory already exists. Use --force to overwrite.")
+    try:
+        os.mkdir(args.OUTPUT_DIR)
+    except FileExistsError:
+        pass
     contact_profiles, profiler = process_tiffs(
         args.IMAGE,
         args.SEGMENTATION_MASK,
         max_radius=args.max_radius,
-        cache_size=args.cache_size * 1024 ^ 2,
+        cache_size=args.cache_size * 1024**2,
         return_profiler=True,
     )
     contact_profiles.to_csv(
@@ -69,11 +73,17 @@ def celltide():
         list(range(-args.max_radius, args.max_radius + 1))
     )
     cell_profile_df = pd.concat(
-        [pd.DataFrame.from_dict(x) for x in cell_profiles],
+        [pd.DataFrame.from_dict(x) for x in cell_profiles.values()],
         keys=cell_profiles.keys(),
         names=["expansion_radius", "row_id"],
     )
     cell_profile_df.to_csv(
         os.path.join(args.OUTPUT_DIR, "cell_profiles.csv"), index=False
+    )
+    logging.info(
+        f"Intensity image cache hits {profiler.intensity_image.store.hits} misses {profiler.intensity_image.store.misses} \n"
+    )
+    logging.info(
+        f"Label image cache hits {profiler.label_image.store.hits} misses {profiler.label_image.store.misses}"
     )
     logging.info("Done")

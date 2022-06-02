@@ -3,7 +3,6 @@ from collections import defaultdict
 from itertools import pairwise
 from typing import Dict, Iterable, List, Mapping, Tuple
 
-import zarr
 import pandas as pd
 import numpy as np
 from shapely.geometry import Polygon
@@ -15,44 +14,30 @@ from .intersections import find_intersections
 from .utils import ImageType
 
 
-def erode_mask(mask: np.ndarray, radius: int):
-    mask_out = mask.copy()
-    dist = ndimage.distance_transform_edt(mask != 0)
-    mask_out[dist <= radius] = 0
-    return mask_out
-
-
 class LazyExpandedRegions:
     def __init__(self, profiler: "ContactProfiler", radius: int):
         self.radius = radius
         self.profiler = profiler
-        # Make copy because we will modify it
-        if isinstance(profiler.label_image, np.ndarray):
-            self.label_image = profiler.label_image.copy()
-        elif isinstance(profiler.label_image, zarr.Array):
-            self.label_image = profiler.label_image[...]
-        else:
-            raise ValueError("Unsupported label image type")
+        self.label_image = profiler.label_image
 
     def __getitem__(self, x: int) -> RegionProperties:
+        if x % 10000 == 0:
+            logging.info(f"Expanding region {x}")
         label = x + 1
-        sl_expanded, li_target = self.profiler.get_expanded_cell_mask(x)
-        li_orig = self.label_image[sl_expanded]
-        li_repl = li_orig.copy()
-        li_repl[li_repl != label] = 0
-        li_repl[li_target] = label
-        try:
-            self.label_image[sl_expanded] = li_repl
-            return RegionProperties(
-                sl_expanded,
-                label,
-                self.label_image,
-                self.profiler.intensity_image,
-                cache_active=True,
-                extra_properties=self.profiler.extra_properties,
-            )
-        finally:
-            self.label_image[sl_expanded] = li_orig
+        sl_expanded, label_image_crop = self.profiler.get_expanded_cell_mask(
+            x, self.radius, return_bool=False
+        )
+        intensity_image_crop = np.moveaxis(
+            self.profiler.intensity_image[:, sl_expanded[0], sl_expanded[1]], 0, -1
+        )
+        return RegionProperties(
+            slice(None),
+            label,
+            label_image_crop,
+            intensity_image_crop,
+            cache_active=True,
+            extra_properties=self.profiler.extra_properties,
+        )
 
     def __len__(self):
         return len(self.profiler.objects)
@@ -60,12 +45,19 @@ class LazyExpandedRegions:
 
 class ContactProfiler:
     def __init__(
-        self, label_image: ImageType, intensity_image: ImageType, extra_properties=None
+        self,
+        label_image: ImageType,
+        intensity_image: ImageType,
+        extra_properties=None,
+        store_profile_masks: bool = False,
+        store_annuli: bool = False,
     ):
         self.label_image = label_image
         self.intensity_image = intensity_image
         self.objects = ndimage.find_objects(label_image)
         self.extra_properties = extra_properties
+        self.store_profile_masks = store_profile_masks
+        self.store_annuli = store_annuli
         self._footprints = {}
         self.intersections = None
         self.annuli = {}
@@ -98,7 +90,11 @@ class ContactProfiler:
         return intersections
 
     def get_expanded_cell_mask(
-        self, x: int, radius: int, crop_slice: Tuple[slice, ...] = None
+        self,
+        x: int,
+        radius: int,
+        crop_slice: Tuple[slice, ...] = None,
+        return_bool: bool = True,
     ) -> Tuple[Tuple[slice, ...], np.ndarray]:
         label = x + 1
         if crop_slice is None:
@@ -115,6 +111,13 @@ class ContactProfiler:
             crop = morphology.binary_dilation(
                 crop, footprint=self._get_footprint(radius)
             )
+        elif radius < 0:
+            crop = morphology.binary_erosion(
+                crop, footprint=self._get_footprint(abs(radius))
+            )
+        if not return_bool:
+            crop = crop.astype(self.label_image.dtype)
+            crop *= label
         return crop_slice, crop
 
     def radial_regionprops(
@@ -122,43 +125,21 @@ class ContactProfiler:
     ) -> Dict[int, Dict[str, np.ndarray]]:
         prop_tables = {}
         for r in radii:
-            if r < 0:
-                mask = erode_mask(self.label_image, radius=abs(r))
-                prop_tables[r] = measure.regionprops_table(
-                    mask, self.intensity_image, **kwargs
-                )
-            elif r == 0:
-                prop_tables[r] = measure.regionprops_table(
-                    self.label_image, self.intensity_image, **kwargs
-                )
-            else:
-                extra_properties = kwargs.get("extra_properties", None)
-                properties = kwargs.get(
-                    "properties", ("label", "area", "intensity_mean")
-                )
-                if extra_properties is not None:
-                    properties = list(properties) + [
-                        x.__name__ for x in extra_properties
-                    ]
-                prop_tables[r] = _props_to_dict(
-                    LazyExpandedRegions(self, r),
-                    properties=properties,
-                    separator=kwargs.get("separator", "-"),
-                )
+            extra_properties = kwargs.get("extra_properties", None)
+            properties = kwargs.get("properties", ("label", "area", "intensity_mean"))
+            if extra_properties is not None:
+                properties = list(properties) + [x.__name__ for x in extra_properties]
+            prop_tables[r] = _props_to_dict(
+                LazyExpandedRegions(self, r),
+                properties=properties,
+                separator=kwargs.get("separator", "-"),
+            )
         return prop_tables
 
     def contact_profile(
         self, cell_pair: Tuple[int, int], max_radius: int
     ) -> np.ndarray:
         sl1, sl2 = self.objects[cell_pair[0]], self.objects[cell_pair[1]]
-        # target_slice = np.array(
-        #     [
-        #         min(sl1[0].start, sl2[0].start) - max_radius,
-        #         min(sl1[1].start, sl2[1].start) - max_radius,
-        #         max(sl1[0].stop, sl2[0].stop) + max_radius,
-        #         max(sl1[1].stop, sl2[1].stop) + max_radius,
-        #     ]
-        # )
         target_slice = (
             slice(
                 min(sl1[0].start, sl2[0].start) - max_radius,
@@ -190,9 +171,9 @@ class ContactProfiler:
         profile_masks.append(np.bitwise_and(annuli[0][1], annuli[1][1]))
         for i in range(2, max_radius + 1):
             profile_masks.append(np.bitwise_and(annuli[1][i], annuli[0][0]))
-        intensity_thumbnail = self.intensity_image[target_slice[0], target_slice[1]]
+        intensity_thumbnail = self.intensity_image[:, target_slice[0], target_slice[1]]
         signal_means = np.stack(
-            [np.mean(intensity_thumbnail[p, :], axis=0) for p in profile_masks]
+            [np.mean(intensity_thumbnail[:, p], axis=1) for p in profile_masks]
         )
         if self.store_profile_masks:
             self.profile_masks[cell_pair] = profile_masks
@@ -214,14 +195,14 @@ class ContactProfiler:
         def line_generator(x: Mapping[Tuple[int, int], np.ndarray]):
             for (c1, c2), p in x.items():
                 for id_m in range(p.shape[1]):
-                    yield tuple(c1, c2, id_m) + tuple(p[:, id_m])
+                    yield (c1, c2, id_m) + tuple(p[:, id_m])
 
         profiles_df = pd.DataFrame.from_records(
             line_generator(profiles),
             columns=["cell_1", "cell_2", "marker_id"]
             + [
                 ("-" if x < 0 else "+" if x > 0 else "") + str(abs(x))
-                for x in range(-max_radius, max_radius + 1)
+                for x in range(1 - max_radius, max_radius)
             ],
         )
         return profiles_df
