@@ -1,0 +1,14 @@
+name: celltide
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - numpy
+  - tifffile
+  - zarr
+  - jupyterlab
+  - shapely
+  - matplotlib
+  - napari
+  - scikit-image
+prefix: /Users/chug/opt/miniconda3/envs/celltide
