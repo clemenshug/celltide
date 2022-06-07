@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import pickle
 
 import pandas as pd
 
@@ -77,6 +78,7 @@ def celltide():
         keys=cell_profiles.keys(),
         names=["expansion_radius", "row_id"],
     )
+    cell_profile_df.reset_index(inplace=True)
     cell_profile_df.to_csv(
         os.path.join(args.OUTPUT_DIR, "cell_profiles.csv"), index=False
     )
@@ -87,3 +89,5 @@ def celltide():
         f"Label image cache hits {profiler.label_image.store.hits} misses {profiler.label_image.store.misses}"
     )
     logging.info("Done")
+    import pdb
+    pdb.set_trace()
