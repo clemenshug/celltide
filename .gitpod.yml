@@ -1,0 +1,9 @@
+image:
+  file: .gitpod-Dockerfile
+tasks:
+  - init: |
+      eval $(command gp env -e)
+      python -m synapseclient \
+        get --downloadLocation /workspace/exemplar-001/ syn31549454 && \
+        cd /workspace/exemplar-001/ && \
+        unzip exemplar-001.zip && rm exemplar-001.zip
