@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from functools import lru_cache
 from itertools import pairwise
 from typing import Dict, Iterable, List, Mapping, Tuple
 
@@ -54,26 +55,25 @@ class ContactProfiler:
     ):
         self.label_image = label_image
         self.intensity_image = intensity_image
+        logging.info("Computing cell slices")
         self.objects = ndimage.find_objects(label_image)
         self.extra_properties = extra_properties
         self.store_profile_masks = store_profile_masks
         self.store_annuli = store_annuli
-        self._footprints = {}
         self.intersections = None
-        self.annuli = {}
-        self.profile_masks = {}
+        self.annuli = defaultdict(dict)
+        self.profile_masks = defaultdict(dict)
         self.contours = self.find_contours(1)
 
+    @lru_cache(maxsize=None)
     def _get_footprint(self, radius: int):
-        try:
-            return self._footprints[radius]
-        except KeyError:
-            self._footprints[radius] = morphology.disk(radius)
-            return self._footprints[radius]
+        return morphology.disk(radius)
 
     def find_contours(self, radius: int) -> List[np.ndarray]:
         contours = []
         for i in range(len(self.objects)):
+            if i % 10000 == 0:
+                logging.info(f"Computing contours for cell {i}")
             sl, mask = self.get_expanded_cell_mask(i, radius)
             mask = ndimage.binary_fill_holes(mask)
             contour = np.concatenate(
@@ -87,6 +87,7 @@ class ContactProfiler:
         polygons = [Polygon(x) for x in self.contours if x.shape[0] >= 3]
         intersections = find_intersections(polygons)
         self.intersections = intersections
+        logging.info(f"Found {len(intersections)} cell contacts")
         return intersections
 
     def get_expanded_cell_mask(
@@ -176,9 +177,9 @@ class ContactProfiler:
             [np.mean(intensity_thumbnail[:, p], axis=1) for p in profile_masks]
         )
         if self.store_profile_masks:
-            self.profile_masks[cell_pair] = profile_masks
+            self.profile_masks[max_radius][cell_pair] = (target_slice, profile_masks)
         if self.store_annuli:
-            self.annuli[cell_pair] = annuli
+            self.annuli[max_radius][cell_pair] = (target_slice, annuli)
         return signal_means
 
     def contact_profile_table(self, max_radius: int) -> pd.DataFrame:
@@ -197,6 +198,7 @@ class ContactProfiler:
                 for id_m in range(p.shape[1]):
                     yield (c1, c2, id_m) + tuple(p[:, id_m])
 
+        logging.info("Assembling contact profile table")
         profiles_df = pd.DataFrame.from_records(
             line_generator(profiles),
             columns=["cell_1", "cell_2", "marker_id"]

@@ -1,3 +1,5 @@
+import logging
+
 from typing import Dict, List, Tuple
 
 from shapely.geometry import Polygon, JOIN_STYLE
@@ -13,6 +15,8 @@ def find_intersections(
     tree_map = {id(x): i for i, x in enumerate(polygons)}
     intersections = {}
     for i, x in enumerate(polygons):
+        if i % 10000 == 0:
+            logging.info(f"Finding cell contacts for cell {i}")
         res = tree.query(x)
         for y in res:
             j = tree_map[id(y)]
