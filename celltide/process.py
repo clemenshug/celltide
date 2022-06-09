@@ -13,6 +13,7 @@ def process_tiffs(
     max_radius: int = 3,
     cache_size: int = 10 * 1024**3,
     return_profiler: bool = False,
+    store_shapes: bool = False,
 ) -> pd.DataFrame | Tuple[pd.DataFrame, ContactProfiler]:
     intensity_tiff = tifffile.TiffFile(intensity_path, mode="rb")
     label_tiff = tifffile.TiffFile(label_path, mode="rb")
@@ -22,9 +23,16 @@ def process_tiffs(
         zarr.LRUStoreCache(intensity_tiff.aszarr(), max_size=intensity_cache_size)
     )[0]
     label_image = zarr.open(
-        zarr.LRUStoreCache(label_tiff.aszarr(), max_size=cache_size - intensity_cache_size)
+        zarr.LRUStoreCache(
+            label_tiff.aszarr(), max_size=cache_size - intensity_cache_size
+        )
     )[0]
-    profiler = ContactProfiler(label_image, intensity_image)
+    profiler = ContactProfiler(
+        label_image,
+        intensity_image,
+        store_profile_masks=store_shapes,
+        store_annuli=store_shapes,
+    )
     df = profiler.contact_profile_table(max_radius)
     if return_profiler:
         return df, profiler

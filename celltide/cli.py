@@ -44,6 +44,12 @@ def celltide():
         type=int,
         help="Cache size for reading image tiles in MB. (Default: 10240 MB = 10 GB)",
     )
+    parser.add_argument(
+        "--store-shapes",
+        action="store_true",
+        help="Store shapes of pairwise cell-cell intersections and contact profiles "
+        "in the output directory. ",
+    )
     args = parser.parse_args()
     logging.basicConfig(
         format="%(processName)s %(asctime)s %(levelname)s: %(message)s",
@@ -66,6 +72,7 @@ def celltide():
         max_radius=args.max_radius,
         cache_size=args.cache_size * 1024**2,
         return_profiler=True,
+        store_shapes=args.store_shapes,
     )
     contact_profiles.to_csv(
         os.path.join(args.OUTPUT_DIR, "contact_profiles.csv"), index=False
@@ -88,6 +95,11 @@ def celltide():
     logging.info(
         f"Label image cache hits {profiler.label_image.store.hits} misses {profiler.label_image.store.misses}"
     )
+    if args.store_shapes:
+        with open(os.path.join(args.OUTPUT_DIR, "annuli.pickle"), "wb") as f:
+            pickle.dump(profiler.annuli, f)
+        with open(os.path.join(args.OUTPUT_DIR, "profile_masks.pickle"), "wb") as f:
+            pickle.dump(profiler.profile_masks, f)
+        with open(os.path.join(args.OUTPUT_DIR, "cell_contours.pickle"), "wb") as f:
+            pickle.dump(profiler.contours, f)
     logging.info("Done")
-    import pdb
-    pdb.set_trace()

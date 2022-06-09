@@ -113,6 +113,51 @@ contact_profiles <- read_csv("test_out/contact_profiles.csv") %>%
     by = c("channel" = "channel_number")
   )
 
+library(broom)
+absmax <- function(x) head(x[which.max(abs(x))], n = 1)
+
+contact_profiles_summary <- contact_profiles %>%
+  group_by(
+    cell_1, cell_2, marker_id, marker_name, channel
+  ) %>%
+  summarize(
+    max_diff = absmax(
+      value_norm[expansion_radius > 0]
+    ) - absmax(
+      value_norm[expansion_radius < 0]
+    ),
+    response_model = possibly(lm, list(coefficients = list(expansion_radius=NA)))(
+      value_norm ~ expansion_radius, data = cur_data()
+    ) %>%
+      # tidy() %>%
+      list(),
+    slope = response_model %>%
+      map("coefficients") %>%
+      map_dbl("expansion_radius"),
+    .groups = "drop"
+  )
+
+cell_profiles_summary <- cell_profiles %>%
+  filter(measure == "intensity_mean") %>%
+  group_by(cell_id, measure, channel, marker_name) %>%
+  summarize(
+    max_diff = absmax(
+      value_norm[expansion_radius > 0]
+    ) - absmax(
+      value_norm[expansion_radius < 0]
+    ),
+    response_model = possibly(lm, list(coefficients = list(expansion_radius=NA)))(
+      value_norm ~ expansion_radius, data = cur_data()
+    ) %>%
+      # tidy() %>%
+      list(),
+    slope = response_model %>%
+      map("coefficients") %>%
+      map_dbl("expansion_radius"),
+    intensity_mean = value_norm[expansion_radius == 0],
+    .groups = "drop"
+  )
+
 coi <- c(7016, 6965, 7069)
 coi <- coi <- c(7016, 6965, 7069) - 1
 moi <- c("CD11B", "DNA_6")
@@ -139,3 +184,36 @@ contact_profiles %>%
   ) +
   geom_line() +
   facet_wrap(~cell_1 + cell_2, scales = "free_y")
+
+
+
+library(igraph)
+library(tidygraph)
+library(ggraph)
+
+cell_profiles_summary_graph <- cell_profiles_summary %>%
+  filter(
+    cell_id %in% union(contact_profiles_summary$cell_1, contact_profiles_summary$cell_2)
+  ) %>%
+  select(
+    cell_id, max_diff, slope, intensity_mean, marker_name
+  ) %>%
+  pivot_wider(names_from = marker_name, values_from = c(max_diff, slope, intensity_mean))
+
+contact_profiles_summary_graph <- contact_profiles_summary %>%
+  select(
+    cell_1, cell_2, marker_name, max_diff, slope
+  ) %>%
+  pivot_wider(names_from = marker_name, values_from = c(max_diff, slope))
+
+profile_graph <- graph_from_data_frame(
+  contact_profiles_summary_graph,
+  vertices = cell_profiles_summary_graph,
+  directed = FALSE
+)
+
+ggraph(
+  profile_graph, layout = "igraph", algorithm = "nicely"
+) +
+  geom_edge_fan(aes(color = slope_FOXP3)) +
+  geom_node_point(aes(size = intensity_mean_FOXP3))
