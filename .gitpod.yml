@@ -13,4 +13,4 @@ tasks:
         get --downloadLocation /workspace/celltide syn31869813 && \
         cd /workspace/celltide && \
         unzip CROP-097.zip && rm CROP-097.zip
-    command: python3.10 -m jupyter lab /workspace/celltide/explore_vis.ipynb
+    command: python3.10 /workspace/celltide/gitpod_examples/visualize_crop-097.py
