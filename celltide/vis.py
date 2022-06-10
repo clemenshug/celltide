@@ -19,13 +19,6 @@ if TYPE_CHECKING:
     from .tide import ContactProfiler
 
 
-CELL_LABEL_PROPS = {
-    "text": "{cell_id}",
-    "size": 12,
-    "color": "green",
-}
-
-
 class CellTideVis:
     def __init__(self, profiler: "ContactProfiler"):
         self.profiler = profiler
@@ -56,11 +49,19 @@ class CellTideVis:
             self.viewer.layers.remove(self.cell_label_layer)
         except Exception:
             pass
-        self.cell_label_layer = self.viewer.add_points(
-            self.centroids[self.selected_pair, :],
-            size=0,
+        cell_outlines = [self.profiler.contours[i] for i in self.selected_pair]
+        self.cell_label_layer = self.viewer.add_shapes(
+            cell_outlines,
+            shape_type="polygon",
+            face_color="transparent",
+            edge_color="green",
+            edge_width=1,
             properties={"cell_id": [i + 1 for i in self.selected_pair]},
-            text=CELL_LABEL_PROPS,
+            text={
+                "text": "{cell_id}",
+                "size": 12,
+                "color": "green",
+            },
             name="Cell labels",
         )
         self.viewer.layers.selection = [self.point_layer]
