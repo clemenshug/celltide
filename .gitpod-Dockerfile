@@ -14,10 +14,10 @@ RUN sudo add-apt-repository ppa:deadsnakes/ppa -y && \
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | sudo python3.10
 
 # Napari image viewer
-RUN sudo python3.10 -m pip install "napari[all]"
+RUN python3.10 -m pip install --user "napari[all]"
 
 # Client for synapse.org
-RUN sudo python3.10 -m pip install synapseclient
+RUN python3.10 -m pip install --user synapseclient
 
 # Additional libraries for image processing not covered by napari
-RUN sudo python3.10 -m pip install numpy tifffile zarr jupyterlab shapely matplotlib scikit-image
+RUN python3.10 -m pip install --user numpy tifffile zarr jupyterlab shapely matplotlib scikit-image
