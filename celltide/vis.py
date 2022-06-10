@@ -20,8 +20,9 @@ if TYPE_CHECKING:
 
 
 CELL_LABEL_PROPS = {
-    "string": "{cell_id}",
+    "text": "{cell_id}",
     "size": 12,
+    "color": "green",
 }
 
 
@@ -57,14 +58,18 @@ class CellTideVis:
             pass
         self.cell_label_layer = self.viewer.add_points(
             self.centroids[self.selected_pair, :],
-            size=5,
+            size=0,
             properties={"cell_id": [i + 1 for i in self.selected_pair]},
             text=CELL_LABEL_PROPS,
+            name="Cell labels",
         )
+        self.viewer.layers.selection = [self.point_layer]
         self.mpl_widget.figure.clear()
         axs = self.mpl_widget.figure.subplots(2)
+        cell_rings_radii = list(range(1 - self.selected_radius, self.selected_radius))
         cell_rings = self.profiler.radial_regionprops(
-            list(range(-2, 3)), cells=self.selected_pair
+            cell_rings_radii,
+            cells=self.selected_pair,
         )
         contact_profile = self.profiler.contact_profile(
             self.selected_pair, max_radius=self.selected_radius
@@ -77,11 +82,14 @@ class CellTideVis:
                 label=f"cell {i + 1}",
             )
         axs[0].legend()
-        for i in range(2):
-            axs[1].plot(
-                list(range(1 - self.selected_radius, self.selected_radius)),
-                contact_profile[:, self.selected_channel],
-            )
+        axs[0].set_xlabel("Cell expansion radius")
+        axs[1].plot(
+            cell_rings_radii,
+            contact_profile[:, self.selected_channel][::-1],
+        )
+        axs[1].set_xlabel(
+            f"Position {self.selected_pair[0] + 1} ↔️ {self.selected_pair[1] + 1}"
+        )
         self.mpl_widget.draw()
 
     def show_graph(self) -> None:
@@ -90,15 +98,21 @@ class CellTideVis:
         )
         point_coords = np.mean(vector_coords, axis=1)
         vector_coords[:, 1, :] -= vector_coords[:, 0, :]
-        self.edge_layer = self.viewer.add_vectors(vector_coords)
+        self.edge_layer = self.viewer.add_vectors(
+            vector_coords, name="Neighborhood graph"
+        )
         # self.edge_layer.mode = "select"
         # self.edge_layer.editable = True
-        self.point_layer = self.viewer.add_points(point_coords, size=1)
+        self.point_layer = self.viewer.add_points(
+            point_coords, size=1, name="Edge selection"
+        )
         # self.point_layer.mode = "select"
         self.mpl_widget = FigureCanvas(Figure(figsize=(5, 3)))
         self.viewer.window.add_dock_widget(self.mpl_widget)
 
         def select_pair(event):
+            if not self.point_layer.selected_data:
+                return
             pairs_idx = next(iter(self.point_layer.selected_data))
             cell_pair = tuple(self.pairs[pairs_idx])
             if cell_pair == self.selected_pair:
@@ -109,7 +123,7 @@ class CellTideVis:
 
         self.point_layer.events.highlight.connect(select_pair)
 
-        radius_menu = ComboBox(label="Max radius", value=3, choices=list(range(2, 5)))
+        radius_menu = ComboBox(label="Max radius", value=3, choices=list(range(2, 8)))
         channel_menu = ComboBox(
             label="Channel",
             value=0,

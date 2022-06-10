@@ -29,8 +29,8 @@ class LazyExpandedRegions:
         self.cells = cells
 
     def __getitem__(self, x: int) -> RegionProperties:
-        if x % 10000 == 0:
-            logging.info(f"Expanding region {x}")
+        # if x % 10000 == 0:
+        #     logging.info(f"Expanding region {x}")
         if self.cells is not None:
             x = self.cells[x]
         label = x + 1
@@ -61,6 +61,7 @@ class ContactProfiler:
         extra_properties=None,
         store_profile_masks: bool = False,
         store_annuli: bool = False,
+        marker_names: Optional[List[str]] = None,
     ):
         self.label_image = label_image
         self.intensity_image = intensity_image
@@ -73,6 +74,7 @@ class ContactProfiler:
         self.annuli = defaultdict(dict)
         self.profile_masks = defaultdict(dict)
         self.contours = self.find_contours(1)
+        self.marker_names = marker_names
 
     @lru_cache(maxsize=None)
     def _get_footprint(self, radius: int):
