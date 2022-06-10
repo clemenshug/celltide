@@ -2,7 +2,7 @@ import logging
 from collections import defaultdict
 from functools import lru_cache
 from itertools import pairwise
-from typing import Dict, Iterable, List, Mapping, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 import pandas as pd
 import numpy as np
@@ -13,17 +13,26 @@ from skimage.measure._regionprops import RegionProperties, _props_to_dict
 
 from .intersections import find_intersections
 from .utils import ImageType
+from .vis import CellTideVis
 
 
 class LazyExpandedRegions:
-    def __init__(self, profiler: "ContactProfiler", radius: int):
+    def __init__(
+        self,
+        profiler: "ContactProfiler",
+        radius: int,
+        cells: Optional[List[int]] = None,
+    ):
         self.radius = radius
         self.profiler = profiler
         self.label_image = profiler.label_image
+        self.cells = cells
 
     def __getitem__(self, x: int) -> RegionProperties:
         if x % 10000 == 0:
             logging.info(f"Expanding region {x}")
+        if self.cells is not None:
+            x = self.cells[x]
         label = x + 1
         sl_expanded, label_image_crop = self.profiler.get_expanded_cell_mask(
             x, self.radius, return_bool=False
@@ -41,7 +50,7 @@ class LazyExpandedRegions:
         )
 
     def __len__(self):
-        return len(self.profiler.objects)
+        return len(self.profiler.objects) if self.cells is None else len(self.cells)
 
 
 class ContactProfiler:
@@ -122,8 +131,8 @@ class ContactProfiler:
         return crop_slice, crop
 
     def radial_regionprops(
-        self, radii: Iterable[int], **kwargs
-    ) -> Dict[int, Dict[str, np.ndarray]]:
+        self, radii: Iterable[int], cells: Optional[List[int]] = None, **kwargs
+    ) -> pd.DataFrame:
         prop_tables = {}
         for r in radii:
             extra_properties = kwargs.get("extra_properties", None)
@@ -131,11 +140,17 @@ class ContactProfiler:
             if extra_properties is not None:
                 properties = list(properties) + [x.__name__ for x in extra_properties]
             prop_tables[r] = _props_to_dict(
-                LazyExpandedRegions(self, r),
+                LazyExpandedRegions(self, r, cells=cells),
                 properties=properties,
                 separator=kwargs.get("separator", "-"),
             )
-        return prop_tables
+        prop_df = pd.concat(
+            [pd.DataFrame.from_dict(x) for x in prop_tables.values()],
+            keys=prop_tables.keys(),
+            names=["expansion_radius", "row_id"],
+        )
+        prop_df.reset_index(inplace=True)
+        return prop_df
 
     def contact_profile(
         self, cell_pair: Tuple[int, int], max_radius: int
@@ -143,12 +158,18 @@ class ContactProfiler:
         sl1, sl2 = self.objects[cell_pair[0]], self.objects[cell_pair[1]]
         target_slice = (
             slice(
-                min(sl1[0].start, sl2[0].start) - max_radius,
-                max(sl1[0].stop, sl2[0].stop) + max_radius,
+                max(min(sl1[0].start, sl2[0].start) - max_radius, 0),
+                min(
+                    max(sl1[0].stop, sl2[0].stop) + max_radius,
+                    self.label_image.shape[0],
+                ),
             ),
             slice(
-                min(sl1[1].start, sl2[1].start) - max_radius,
-                max(sl1[1].stop, sl2[1].stop) + max_radius,
+                max(min(sl1[1].start, sl2[1].start) - max_radius, 0),
+                min(
+                    max(sl1[1].stop, sl2[1].stop) + max_radius,
+                    self.label_image.shape[1],
+                ),
             ),
         )
         cell_masks = defaultdict(list)
@@ -208,3 +229,6 @@ class ContactProfiler:
             ],
         )
         return profiles_df
+
+    def get_visualizer(self) -> CellTideVis:
+        return CellTideVis(self)

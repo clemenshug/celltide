@@ -80,13 +80,7 @@ def celltide():
     cell_profiles = profiler.radial_regionprops(
         list(range(-args.max_radius, args.max_radius + 1))
     )
-    cell_profile_df = pd.concat(
-        [pd.DataFrame.from_dict(x) for x in cell_profiles.values()],
-        keys=cell_profiles.keys(),
-        names=["expansion_radius", "row_id"],
-    )
-    cell_profile_df.reset_index(inplace=True)
-    cell_profile_df.to_csv(
+    cell_profiles.to_csv(
         os.path.join(args.OUTPUT_DIR, "cell_profiles.csv"), index=False
     )
     logging.info(
