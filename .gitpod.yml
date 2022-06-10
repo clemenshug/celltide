@@ -1,9 +1,16 @@
 image:
   file: .gitpod-Dockerfile
+ports:
+  - port: 6080
+    onOpen: open-preview
+  - port: 5090
+    onOpen: ignore
 tasks:
   - init: |
       eval $(command gp env -e)
-      python -m synapseclient \
-        get --downloadLocation /workspace/exemplar-001/ syn31549454 && \
-        cd /workspace/exemplar-001/ && \
-        unzip exemplar-001.zip && rm exemplar-001.zip
+      sudo python3.10 -m pip install -e /workspace/celltide
+      python3.10 -m synapseclient -u "$SYN_USER" -p "$SYN_TOKEN" \
+        get --downloadLocation /workspace/celltide syn31869813 && \
+        cd /workspace/celltide && \
+        unzip CROP-097.zip && rm CROP-097.zip
+    command: python3.10 -m jupyter lab /workspace/celltide/explore_vis.ipynb
